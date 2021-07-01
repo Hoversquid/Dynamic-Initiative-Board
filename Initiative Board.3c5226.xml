@@ -1,0 +1,83 @@
+<Defaults>
+  <Button class="menuButton" fontSize="100" width="400" height="225" />
+  <Toggle class="menuToggleButton" fontSize="100" width="800" height="800" colors="White|White|Red|Green" ignoreLayout="true"/>
+  <Button class="smallButton" fontSize="80" width="400" height="225" />
+  <TableLayout class="menuTable" visibility="hidden" position="200 -2250 -1000"
+    width="2600" height="600" cellSpacing="50" cellBackgroundColor="rgba(1, 1, 1, 0)" />
+
+  <TableLayout class="settingsTable" visibility="hidden" position="200 -2550 -1000"
+    width="2750" height="1200" cellSpacing="25" cellBackgroundColor="rgba(1, 1, 1, 0)" />
+
+  <TableLayout class="objSetTable" visibility="hidden" position="200 -2450 -1000"
+    width="2650" height="1200" cellSpacing="25" cellBackgroundColor="rgba(1, 1, 1, 0)" columnWidths="1700 0" />
+
+  <InputField class="settingsInput" onEndEdit="updateSettingsField" fontSize="100" />
+  <Text class="label" fontSize="120" fontStyle="Bold" color="White"  />
+  <Text class="header" fontSize="140" fontStyle="Bold" color="White"  />
+  <InputField class="keyInputClass" onEndEdit="updateInput" fontSize="140" />
+
+</Defaults>
+
+<Button id="openMenuButton" colors="Red|Green" class="menuButton" position="-1400 -2100 -1000" text="Menu" onClick="toggleMenu" />
+<Button id="openHelpButton" colors="Red|Green" class="menuButton" visibility="hidden" position="-1400 -2350 -1000" text="Help" onClick="toggleHelp" />
+<Button id="backButton" text="Back" class="smallButton" onClick="toggleBack" visibility="hidden" position="-1400 -2350 -1000" />
+<TableLayout id="helpMenu" class="objSetTable">
+  <Row>
+    <Cell><Text class="header">Copy Video Link:</Text></Cell>
+  </Row>
+  <Row>
+    <Cell><InputField id="youtubeLinkText" class="keyInputClass"></InputField></Cell>
+  </Row>
+</TableLayout>
+<TableLayout id="mainMenu" class="menuTable">
+  <Row>
+    <Cell><Button text="Set Menu" class="menuButton" onClick="toggleSetObjsMenu" /></Cell>
+    <Cell><Button text="Initiative Menu" class="menuButton" onClick="toggleInitiativeMenu" /></Cell>
+    <Cell><Button text="Settings Menu" class="menuButton" onClick="toggleSettingsMenu" /></Cell>
+  </Row>
+</TableLayout>
+<TableLayout id="objsSetMenu" class="objSetTable">
+  <Row>
+    <Cell><Text class="header">Name:</Text></Cell>
+    <Cell><InputField id="nameInput" class="keyInputClass"></InputField></Cell>
+  </Row>
+  <Row>
+    <Cell><Text class="header">Highlight Key:</Text></Cell>
+    <Cell><InputField id="keyInput" class="keyInputClass"></InputField></Cell>
+  </Row>
+  <Row>
+    <Cell columnSpan="2" overrideGlobalCellPadding="true"><Button text="Set Objects" class="menuButton" onClick="setObjectsClick" /></Cell>
+  </Row>
+</TableLayout>
+<TableLayout id="settingsMenu" class="settingsTable">
+  <Row>
+    <Cell columnSpan="2"><Button id="toggleHighlightButton" text="" class="menuButton" onClick="setToggleHighlight" /></Cell>
+  </Row>
+  <Row id="clearOptionsRow">
+    <Cell><Button text="Clear All Objects" class="menuButton" onClick="checkClearSavedObjs" /></Cell>
+    <Cell><Button text="Clear Player Objects" class="menuButton" onClick="checkClearPlayerSavedObjs" /></Cell>
+  </Row>
+  <Row id="confirmClearAllRow" visibility="hidden">
+    <Cell><Button text="Confirm Clear All Objects" class="menuButton" onClick="clearSavedObjs" /></Cell>
+    <Cell><Button text="Cancel Clear" class="menuButton" onClick="toggleSettingsMenu" /></Cell>
+  </Row>
+  <Row id="confirmClearPlayerRow" visibility="hidden">
+    <Cell><Button text="Confirm Clear All Player Objects" class="menuButton" onClick="clearPlayerSavedObjs" /></Cell>
+    <Cell><Button text="Cancel Clear" class="menuButton" onClick="toggleSettingsMenu" /></Cell>
+  </Row>
+  <Row>
+    <Cell><Text class="header">Next Init. Key:</Text></Cell>
+    <Cell><InputField id="nextInitInput" fontSize="140" onEndEdit="updateNextInitKey"></InputField></Cell>
+  </Row>
+  <Row>
+    <Cell><Text class="header">Highlight Init. Key:</Text></Cell>
+    <Cell><InputField id="highlightInitInput" fontSize="140" onEndEdit="updateHighlightInitKey"></InputField></Cell>
+  </Row>
+  <Row>
+    <Cell><Text class="header">Init. Arrow Scale:</Text></Cell>
+    <Cell><InputField id="initArrowScaleInput" fontSize="140" onEndEdit="updateArrowScale"></InputField></Cell>
+  </Row>
+  <Row>
+    <Cell columnSpan="2"><Button id="toggleLegalHostButton" text="" class="menuButton" onClick="setToggleLegalHost" /></Cell>
+  </Row>
+</TableLayout>

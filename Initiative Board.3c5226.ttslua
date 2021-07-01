@@ -1,0 +1,1256 @@
+--#region Locals
+local savedObjs, currMenu = {}, ""
+local toggleHighlight, turnHighlight, overlayOn, selectedRow, selectedPlayer = false, false, false, -1, "All"
+local colorOverlayOpen, savedInitList = {}, {}
+local arrowAsset = {name="Arrow Image", url="https://cdn2.iconfinder.com/data/icons/arrow-119/24/chevron-double-right-512.png"}
+local initPanelXML, initControlsXML, playerInitTableXML, playerObjRowXML, initEntryXML, emptyRow, initArrowXML
+local rowEntryHeight = 60
+local initForwardKey, initHighlightKey = "0", ""
+local hostHasInitiativeControl = true
+local arrowScale = "4"
+--#endregion
+
+--#region EventFuncs
+
+function onSave()
+  local savedData = JSON.encode({
+    savedObjs = savedObjs,
+    savedInitList = savedInitList,
+    toggleHighlight = toggleHighlight,
+    turnHighlight = turnHighlight,
+    selectedRow = selectedRow,
+    overlayOn = overlayOn,
+    initForwardKey = initForwardKey,
+    initHighlightKey = initHighlightKey,
+    hostHasInitiativeControl = hostHasInitiativeControl,
+    arrowScale = arrowScale
+    })
+  return savedData
+end
+
+function loadData(save_state)
+  if save_state ~= "" then
+    local data = JSON.decode(save_state)
+    savedObjs, savedInitList, toggleHighlight, selectedRow,
+    overlayOn, initForwardKey, initHighlightKey, hostHasInitiativeControl, arrowScale =
+    data.savedObjs, data.savedInitList, data.toggleHighlight, data.selectedRow,
+    data.overlayOn, data.initForwardKey, data.initHighlightKey, data.hostHasInitiativeControl, data.arrowScale
+
+    checkSavedObjs()
+    if selectedRow > 0 and savedObjs and savedInitList then
+      local selObj = getObjectFromGUID(savedInitList[selectedRow][1])
+      if selObj then
+        local posTbl = getObjTablePos(selObj.guid)
+        if not isEmptyTable(posTbl) and posTbl.color ~= nil and posTbl.keyName ~= nil and posTbl.keyIndex ~= nil and overlayOn then
+          setInitArrow(getObjectFromGUID(selObj.guid), savedInitList[selectedRow][4], true)
+          writeInitTable()
+        elseif overlayOn then
+          writeInitTable()
+        end
+      end
+    elseif overlayOn then
+      writeInitTable()
+    end
+
+    return true
+  else
+    self.UI.setCustomAssets({arrowAsset})
+    writeInitTable()
+  end
+end
+
+function onLoad(save_state)
+  Wait.frames(function()
+
+    initPanelXML = {
+      tag="Panel", attributes={id="initListPanel",padding="15 15",returnToOriginalPositionWhenReleased="false",width="260",visibility="hidden",color="#FFFFFF",allowDragging="false",rectAlignment="LowerRight"}, children={
+        {tag="TableLayout",attributes={visibility="",columnWidths="145 0 0"}, children={
+          {tag="Row",attributes={visibility="hidden"},children={
+            {tag="Cell",attributes={columnSpan=3},children={
+              {tag="VerticalScrollView", attributes={scrollSensitivity=6}, children={
+                {tag="TableLayout",attributes={id="initListTable",columnWidths="145 0 0"}, children={}
+              }}
+            }}}}
+          },
+          {tag="Row",attributes={preferredHeight="280"},children={
+            {tag="Cell",attributes={columnSpan=3},children={
+              {tag="TableLayout",attributes={columnWidths="145 0 0",padding="0 0 15 0",cellSpacing="5", height="280"},children={}
+            }}}}
+          }
+    }}}}
+
+    initControlsXML = {
+        {tag="Row",attributes={ignoreLayout="true"},children={
+          {tag="Cell",attributes={columnSpan=3},children={{tag="Button",attributes={onClick=self.getGUID().."/sendAllInitPromptClick"},value="Get All Inits"}}}}},
+          {tag="Row",attributes={ignoreLayout="true"},children={
+            {tag="Cell",attributes={columnSpan=3},children={{tag="Button",attributes={onClick=self.getGUID().."/sendUnsavedInitPromptClick"},value="Get Unsaved Inits"}}}}},
+        {tag="Row", attributes={ignoreLayout="true"}, children={
+          {tag="Cell",attributes={columnSpan=3},children={{tag="Button",attributes={onClick=self.getGUID().."/sortInitList"},value="Sort Inits"}}}}},
+        {tag="Row", attributes={ignoreLayout="true"}, children={
+          {tag="Cell",attributes={columnSpan=3},children={{tag="Button",attributes={onClick=self.getGUID().."/stopCombat"},value="Deselect Init"}}}}},
+        {tag="Row", attributes={id="clearInitRow",ignoreLayout="true", visibility=""}, children={
+          {tag="Cell",attributes={columnSpan=3},children={
+            {tag="Button",attributes={onClick=self.getGUID().."/checkInitListClear"},value="Clear Inits"}
+        }}}},
+        {tag="Row", attributes={id="clearConfirmMenuRow", ignoreLayout="true", visibility="hidden", columnSpan=3}, children={
+          {tag="Cell",attributes={columnSpan=3},children={
+            {tag="TableLayout", children={
+              {tag="Row", children={
+                {tag="Cell", attributes={columnSpan=3}, children={
+                  {tag="Button", attributes={onClick=self.getGUID().."/clearInitList"}, value="Confirm Clear"}
+                }},
+                {tag="Cell",attributes={columnSpan=3}, children={
+                  {tag="Button", attributes={onClick=self.getGUID().."/closeClearConfirmMenu"}, value="Go Back"}
+                }},
+              }
+            }}
+        }}}}},
+        {tag="Row", attributes={id="deleteRow",ignoreLayout="true", visibility=""}, children={
+          {tag="Cell",attributes={columnSpan=3},children={
+            {tag="Button",attributes={onClick=self.getGUID().."/checkDeleteSelectedRow"},value="Delete Selected"}
+        }}}},
+        {tag="Row", attributes={id="deleteConfirmMenuRow", ignoreLayout="true", visibility="hidden", columnSpan=3}, children={
+          {tag="Cell",attributes={columnSpan=3},children={
+            {tag="TableLayout", children={
+              {tag="Row", children={
+                {tag="Cell", attributes={columnSpan=3}, children={
+                  {tag="Button", attributes={onClick=self.getGUID().."/deleteSelectedRow"}, value="Confirm Delete"}
+                }},
+                {tag="Cell",attributes={columnSpan=3}, children={
+                  {tag="Button", attributes={onClick=self.getGUID().."/closeDeleteConfirmMenu"}, value="Go Back"}
+                }},
+              }
+            }}
+        }}}}},
+        {tag="Row",attributes={ignoreLayout="true"},children={
+          {tag="Cell", attributes={columnSpan=3,id="dropdownCell"}, children={
+            {tag="Dropdown", attributes={id="playerListDropdown", onValueChanged=self.getGUID().."/updateDropdown"}, children={
+              {tag="Option", attributes={selected="True"}, value="All"}
+          }}}
+    }}}}
+
+    playerInitTableXML = {
+      tag="Panel", attributes={rectAlign="MiddleCenter",width="400",color="#FFFFFF"}, children={
+        {tag="TableLayout", attributes={cellSpacing="15"}, children={
+          {tag="Row",attributes={},children={
+            {tag="Cell", attributes={columnSpan=2}, children={
+              {tag="VerticalScrollView",attributes={scrollSensitivity=6},children={
+                {tag="TableLayout", attributes={}, children={
+
+                }}
+              }}}
+          }}},
+          {tag="Row", attributes={preferredHeight="65"},children={
+            {tag="Cell", attributes={},children={
+              {tag="Button", attributes={}, value="Send Inits"}}},
+            {tag="Cell", attributes={},children={
+              {tag="Button", attributes={}, value="Cancel"}
+            }}
+          }}
+    }}}}
+
+    playerObjRowXML =
+      {tag="Row", attributes={preferredHeight=tostring(rowEntryHeight)}, children={
+        {tag="Cell", children={{tag="Text",attributes={color="#000000"}}}},
+        {tag="Cell", children={{tag="InputField",text="",attributes={onEndEdit=self.getGUID().."/updateGlobalSettingsField"}}}
+      }}
+    }
+
+    initEntryXML = {
+      {tag="Row",children={
+        {tag="Cell",children={{tag="Text",attributes={color="#000000"}}}},
+        {tag="Cell",children={{tag="Text",attributes={color="#000000"}}}},
+      }}
+    }
+
+    emptyRow =
+      {tag="Row",attributes={onClick=self.getGUID().."/selectInitRow",preferredHeight=tostring(rowEntryHeight)},children={
+        {tag="Cell", children={
+          {tag="Text",attributes={color="#000000"}}}
+        },
+        {tag="Cell",children={
+          {tag="Text",attributes={color="#000000"}}}
+        },
+        {tag="Cell",children={
+            {tag="TableLayout",children={
+              {tag="Row", children={
+                {tag="Cell",children={
+                  {tag="Button",attributes={height="50",onClick=self.getGUID().."/moveInitValueUp"},value="^"}
+              }}}},
+              {tag="Row", children={
+                {tag="Cell",children={
+                  {tag="Button",attributes={height="50",onClick=self.getGUID().."/moveInitValueDown"},value="v"}
+              }}}}
+            }
+        }}}}
+    }
+
+    initArrowXML = {
+      tag="Image", attributes={type="Simple",width="50",height="50"}
+    }
+    loadData(save_state)
+  end, 2)
+  Wait.frames(function() setButtonText() end, 20)
+
+end
+
+function onPlayerChangeColor(player_color) -- add player list to dropdown options
+  if overlayOn then
+    setPlayerListDropdown(getInitPanelElement(UI.getXmlTable()), false)
+  end
+end
+
+function onPlayerTurnStart(startColor)
+  print(endColor .. " player start turn")
+  if turnHighlight then turnOnColorObjects(startColor) end
+end
+
+function onDestroy()
+  local ui = UI.getXmlTable()
+  local panel = getInitPanelElement(ui)
+  for i = 1, #ui do
+    if ui[i] == panel then ui[i] = nil end
+  end
+  UI.setXmlTable({ui})
+end
+
+function onObjectDestroy(obj) -- checks if object is savedObj to remove from list
+  local posTbl = getObjTablePos(obj.guid)
+  if not isEmptyTable(posTbl) and posTbl.color ~= nil and posTbl.keyName ~= nil and posTbl.keyIndex ~= nil then
+    local colorTbl = savedObjs[posTbl.color]
+    table.remove(colorTbl[posTbl.keyName], posTbl.keyIndex)
+    clearEmptyTables(colorTbl, posTbl.keyName, posTbl.color)
+  end
+  if savedInitList and #savedInitList > 0 and overlayOn then
+    for i = 1, #savedInitList do
+      if savedInitList[i][1] == obj.guid then
+        table.remove(savedInitList, i)
+        if #savedInitList > 0 then
+          if selectedRow == i then
+            if i > #savedInitList then selectedRow = #savedInitList
+            else selectedRow = i end
+            setInitArrow(getObjectFromGUID(savedInitList[selectedRow][1]), savedInitList[selectedRow][4], true)
+          elseif selectedRow > i then
+            selectedRow = selectedRow - 1
+            setInitArrow(getObjectFromGUID(savedInitList[selectedRow][1]), savedInitList[selectedRow][4], true)
+          end
+        end
+        writeInitTable()
+        break
+      end
+    end
+  end
+end
+
+function onPlayerTurnEnd(endColor)
+  if turnHighlight then turnOffColorObjects(endColor) end
+end
+
+function onScriptingButtonDown(key, color)
+  if tostring(key) == initForwardKey and isLegalInitOwner(color) then
+    selectNextInit()
+  elseif tostring(key) == initHighlightKey and isLegalInitOwner(color) then
+    setCurrentInitHighlight(true)
+  else
+    local selTable = getKeyTable(key, color)
+    if selTable ~= nil then for i = 1, #selTable do
+      if color == "Black" then color = {r=0, b=0, g=0} end
+      obj = getObjectFromGUID(selTable[i][1])
+      if obj ~= nil then if selTable[i][3] then selTable[i][3] = false getObjectFromGUID(selTable[i][1]).highlightOff(color)
+      else selTable[i][3] = true getObjectFromGUID(selTable[i][1]).highlightOn(color) end end
+    end end
+  end
+end
+
+function onScriptingButtonUp(key, color)
+  if not toggleHighlight then
+    if tostring(key) == initHighlightKey and isLegalInitOwner(color) then
+      if not isEmptyTable(savedObjs) and not isEmptyTable(savedInitList) and selectedRow > 0 then
+        local selObj = getObjectFromGUID(savedInitList[selectedRow][1])
+        if selObj then
+          local posTbl = getObjTablePos(selObj.guid)
+          if not isEmptyTable(posTbl) and posTbl.color ~= nil and posTbl.keyName ~= nil and posTbl.keyIndex ~= nil then
+            if not savedObjs[posTbl.color][posTbl.keyName][posTbl.keyIndex][3] then
+              setCurrentInitHighlight(false)
+            end
+          end
+        end
+      end
+    else
+      local selTable, obj = getKeyTable(key, color), nil
+      if selTable ~= nil then for i = 1, #selTable do
+        obj = getObjectFromGUID(selTable[i][1])
+        if color == "Black" then color = {r=0, b=0, g=0} end
+        if obj ~= nil then selTable[i][3] = false getObjectFromGUID(selTable[i][1]).highlightOff(color) end
+      end end
+    end
+  end
+end
+
+--#endregion
+
+--#region UIFuncs
+
+function toggleSettingsMenu()
+  currMenu = "Settings"
+  self.UI.setAttribute("mainMenu", "visibility", "hidden")
+  self.UI.setAttribute("openHelpButton", "visibility", "hidden")
+  self.UI.setAttribute("helpMenu", "visibility", "hidden")
+  self.UI.setAttribute("confirmClearAllRow", "visibility", "hidden")
+  self.UI.setAttribute("confirmClearPlayerRow", "visibility", "hidden")
+  self.UI.setAttribute("settingsMenu", "visibility", "")
+  self.UI.setAttribute("clearOptionsRow", "visibility", "")
+  self.UI.setAttribute("backButton", "visibility", "")
+end
+
+function toggleBack()
+  currMenu = "Main"
+  self.UI.setAttribute("mainMenu", "visibility", "")
+  self.UI.setAttribute("openHelpButton", "visibility", "")
+  self.UI.setAttribute("helpMenu", "visibility", "hidden")
+  self.UI.setAttribute("backButton", "visibility", "hidden")
+  self.UI.setAttribute("objsSetMenu", "visibility", "hidden")
+  self.UI.setAttribute("settingsMenu", "visibility", "hidden")
+end
+
+function toggleMenu()
+  if currMenu ~= "" then
+    currMenu = ""
+    self.UI.setAttribute("mainMenu", "visibility", "hidden")
+    self.UI.setAttribute("openHelpButton", "visibility", "hidden")
+    self.UI.setAttribute("helpMenu", "visibility", "hidden")
+    self.UI.setAttribute("backButton", "visibility", "hidden")
+    self.UI.setAttribute("objsSetMenu", "visibility", "hidden")
+    self.UI.setAttribute("settingsMenu", "visibility", "hidden")
+  else
+    currMenu = "Main"
+    self.UI.setAttribute("openHelpButton", "visibility", "")
+    self.UI.setAttribute("mainMenu", "visibility", "")
+  end
+end
+
+function toggleHelp()
+  currMenu = "Help"
+  self.UI.setAttribute("openHelpButton", "visibility", "hidden")
+  self.UI.setAttribute("helpMenu", "visibility", "")
+  self.UI.setAttribute("backButton", "visibility", "")
+  self.UI.setAttribute("mainMenu", "visibility", "hidden")
+  self.UI.setAttribute("backButton", "visibility", "")
+  self.UI.setAttribute("objsSetMenu", "visibility", "hidden")
+  self.UI.setAttribute("settingsMenu", "visibility", "hidden")
+  self.UI.setAttribute("youtubeLinkText", "text", "https://youtu.be/r-LluQKJY8g")
+end
+
+function toggleSetObjsMenu()
+  currMenu = "ObjsSet"
+  self.UI.setAttribute("objsSetMenu", "visibility", "")
+  self.UI.setAttribute("mainMenu", "visibility", "hidden")
+  self.UI.setAttribute("backButton", "visibility", "")
+  self.UI.setAttribute("openHelpButton", "visibility", "hidden")
+  self.UI.setAttribute("settingsMenu", "visibility", "hidden")
+  self.UI.setAttribute("helpMenu", "visibility", "hidden")
+end
+
+function setButtonText()
+  if toggleHighlight then setInput("toggleHighlightButton", "Toggle Highlight: Yes")
+  else setInput("toggleHighlightButton", "Toggle Highlight: No") end
+
+  if hostHasInitiativeControl then setInput("toggleLegalHostButton", "Initiative Control: Game Master and Host")
+  else setInput("toggleLegalHostButton", "Initiative Control: Game Master") end
+
+  setInput("nextInitInput", initForwardKey)
+  setInput("highlightInitInput", initHighlightKey)
+  setInput("initArrowScaleInput", arrowScale)
+
+  return true
+end
+
+function setInput(id, value)
+  self.UI.setAttribute(id, "text", value)
+end
+
+function updateInput(player, value, id)
+  self.UI.setAttribute(id, "text", value)
+end
+
+function updateNextInitKey(player, value, id)
+  if isValidScriptKey(value) then
+    self.UI.setAttribute(id, "text", value)
+    initForwardKey = tostring(value)
+  else
+    print("Select Next Initiative Key: Please enter valid scripting number (1-10)")
+    self.UI.setAttribute(id, "text", initForwardKey)
+  end
+end
+
+function updateHighlightInitKey(player, value, id)
+  if isValidScriptKey(value) then
+    self.UI.setAttribute(id, "text", value)
+    initHighlightKey = tostring(value)
+  else
+    print("Selected Initiative Highlight Key: Please enter valid scripting number (1-10)")
+    self.UI.setAttribute(id, "text", initHighlightKey)
+  end
+end
+
+function setToggleLegalHost()
+  if hostHasInitiativeControl then hostHasInitiativeControl = false
+  else hostHasInitiativeControl = true end
+  setButtonText()
+  writeInitTable()
+end
+
+--InitBoard Funcs
+
+function findInitPanel()
+  local ui = UI.getXmlTable()
+  if not isEmptyTable(ui) then
+    for k, ele in ipairs(ui) do if getInitPanelElement(ele) ~= nil then return ele end end
+  end
+  return nil
+end
+
+function getInitPanelElement(ui)
+  local isInitTable = function(elem) return tableHasID("initListPanel", elem) end
+  return BFS(ui, isInitTable)
+end
+
+function toggleInitiativeMenu()
+  if overlayOn then
+    overlayOn = false
+    UI.setAttribute("initListPanel", "visibility", "hidden")
+  else
+    overlayOn = true
+    writeInitTable()
+  end
+end
+
+function tryAutoClose()
+  toggleMenu()
+end
+
+function updateGlobalSettingsField(player, value, id)
+  UI.setAttribute(id, "text", value)
+end
+
+function updateDropdown(player, option, id)
+  selectedPlayer = option
+end
+
+function getDropdownSelection(ele)
+  local opts = ele["children"]
+  if not isEmptyTable(ele) then for i=1, #opts do if opts[i]["attributes"].selected == "True" then return i end end end
+  return -1
+end
+
+function updateArrowScale(player, value, id)
+  local scaling = tonumber(value)
+  if scaling and scaling > 0 and scaling <= 10 then
+    arrowScale = value
+    self.UI.setAttribute("initArrowScaleInput", "text", value)
+  else
+    print("Arrow Scale: Enter value between 0 and 10")
+    self.UI.setAttribute("initArrowScaleInput", "text", arrowScale)
+  end
+  writeInitTable()
+end
+
+function checkInitListClear()
+  UI.setAttribute("clearConfirmMenuRow", "visibility", "")
+  UI.setAttribute("deleteRow", "visibility", "")
+  UI.setAttribute("clearInitRow", "visibility", "hidden")
+  UI.setAttribute("deleteConfirmMenuRow", "visibility", "hidden")
+end
+
+function closeClearConfirmMenu()
+  UI.setAttribute("clearInitRow", "visibility", "")
+  UI.setAttribute("deleteRow", "visibility", "")
+  UI.setAttribute("clearConfirmMenuRow", "visibility", "hidden")
+  UI.setAttribute("deleteConfirmMenuRow", "visibility", "hidden")
+end
+
+function checkDeleteSelectedRow()
+  UI.setAttribute("deleteConfirmMenuRow", "visibility", "")
+  UI.setAttribute("clearInitRow", "visibility", "")
+  UI.setAttribute("deleteRow", "visibility", "hidden")
+  UI.setAttribute("clearConfirmMenuRow", "visibility", "hidden")
+end
+
+function closeDeleteConfirmMenu()
+  UI.setAttribute("deleteRow", "visibility", "")
+  UI.setAttribute("clearInitRow", "visibility", "")
+  UI.setAttribute("clearConfirmMenuRow", "visibility", "hidden")
+  UI.setAttribute("deleteConfirmMenuRow", "visibility", "hidden")
+end
+
+function checkClearSavedObjs()
+  self.UI.setAttribute("confirmClearAllRow", "visibility", "")
+  self.UI.setAttribute("setCurrBoardDefaultRow", "visibility", "")
+  self.UI.setAttribute("clearOptionsRow", "visibility", "hidden")
+  self.UI.setAttribute("confirmBoardSettingRow", "visibility", "hidden")
+  self.UI.setAttribute("clearInitRow", "visibility", "hidden")
+  self.UI.setAttribute("clearConfirmMenuRow", "visibility", "hidden")
+  self.UI.setAttribute("deleteConfirmMenuRow", "visibility", "hidden")
+end
+
+function checkClearPlayerSavedObjs()
+  self.UI.setAttribute("confirmClearPlayerRow", "visibility", "")
+  self.UI.setAttribute("setCurrBoardDefaultRow", "visibility", "")
+  self.UI.setAttribute("confirmClearAllRow", "visibility", "hidden")
+  self.UI.setAttribute("clearOptionsRow", "visibility", "hidden")
+  self.UI.setAttribute("confirmBoardSettingRow", "visibility", "hidden")
+  self.UI.setAttribute("clearInitRow", "visibility", "hidden")
+  self.UI.setAttribute("deleteConfirmMenuRow", "visibility", "hidden")
+end
+
+--#endregion
+
+--#region ObjectFuncs
+
+function isLegalInitOwner(playerColor)
+  local legalHostPlayer = hostHasInitiativeControl and Player[playerColor].host
+  return (savedInitList and #savedInitList > 0 and selectedRow > 0 and (savedInitList[selectedRow][4] == playerColor or playerColor == "Black" or legalHostPlayer))
+end
+
+function setCurrentInitHighlight(turnOn)
+  if savedInitList and #savedInitList > 0 and selectedRow > 0 and savedInitList[selectedRow] then
+    local selected = getObjectFromGUID(savedInitList[selectedRow][1])
+    if selected ~= nil then
+      local highlightColor = savedInitList[selectedRow][4]
+      if highlightColor == "Black" then highlightColor = {r=0, b=0, g=0} end
+      if turnOn then selected.highlightOn(highlightColor)
+      else selected.highlightOff(highlightColor)
+      end
+    end
+  end
+end
+
+function setNonNullPos(vals)
+  for i = 1, #vals do
+    if vals[i] == nil then
+      vals[i] = 0
+    end
+  end
+  return vals
+end
+
+function getPosData()
+  return setNonNullPos({self.UI.getAttribute("xPos", "text"), self.UI.getAttribute("yPos", "text"), self.UI.getAttribute("zPos", "text")})
+end
+
+function getScaleData()
+  return setNonNullPos({self.UI.getAttribute("xSc", "text"), self.UI.getAttribute("ySc", "text"), self.UI.getAttribute("zSc", "text")})
+end
+
+function setToggleHighlight()
+  if toggleHighlight then toggleHighlight = false
+  else toggleHighlight = true end
+  resetAllHighlights()
+  setButtonText()
+end
+
+--InitBoard Funcs
+
+function BFS(data, func, max_depth)
+  max_depth = max_depth or 10000
+  local queue = {}
+  local depth = {} -- depth queue
+  local head  = 1
+  local tail  = 1
+  local function push(e, d)
+    queue[tail] = e
+    depth[tail] = d
+    tail = tail + 1
+  end
+
+  local function pop()
+    if head == tail then return nil end
+    local e, d = queue[head], depth[head]
+    head = head + 1
+    return e, d
+  end
+
+  local elem = data
+  local d = 1
+  while elem and d <= max_depth do
+    local r = func(elem)
+    if r then return elem end
+    for _, child in pairs(elem) do
+      if type(child) == 'table' then
+        push(child, d + 1)
+      end
+    end
+    elem, d = pop()
+  end
+end
+
+function resetAllHighlights()
+  if not isEmptyTable(savedObjs) then for color, _ in pairs(savedObjs) do turnOffColorObjects(color) end end
+end
+
+function checkSavedObjs()
+  local newObjs = {}
+  if not isEmptyTable(savedObjs) then
+    local newColorTbl = {}
+    for color, keyNameTbl in pairs(savedObjs) do
+
+      local newColorTbl = {}
+      for keyName, objTbl in pairs(keyNameTbl) do
+
+        local newObjTbl = {}
+        for i = 1, #objTbl do
+          if getObjectFromGUID(objTbl[i][1]) then table.insert(newObjTbl, objTbl[i]) end
+        end
+        if #newObjTbl > 0 then newColorTbl[keyName] = newObjTbl end
+
+      end
+
+      if next(newColorTbl) then
+        newObjs[color] = newColorTbl
+      end
+    end
+    savedObjs = newObjs
+  end
+end
+
+function sendAllInitPromptClick()
+  if selectedPlayer == "All" then sendInitMenus(true)
+  else
+    local selPlayer = getSelectedPlayer()
+    if selPlayer ~= nil then sendInitMenus(true, selPlayer) end
+  end
+end
+
+function sendUnsavedInitPromptClick()
+  if selectedPlayer == "All" then sendInitMenus(false)
+  else
+    local selPlayer = getSelectedPlayer()
+    if selPlayer ~= nil then sendInitMenus(false, selPlayer) end
+  end
+end
+
+
+function colorOverlayIsOpen(colorName)
+  for j = 1, #colorOverlayOpen do if colorOverlayOpen[j] == colorName then return true end end
+  return false
+end
+
+function sendInitMenus(getAllInits, player)
+  local ui = UI.getXmlTable()
+  if player == nil then -- send menus to all players
+    local list, i = Player.getPlayers()
+    if #list > 0 then
+      for i = 1, #list do
+        if not colorOverlayIsOpen(list[i].color) then -- if player overlay not on, create one
+          local objList = getPlayerSavedObjList(list[i].color)
+          if getAllInits then
+            if not isEmptyTable(objList) then
+              table.insert(colorOverlayOpen, list[i].color)
+              table.insert(ui, createPlayerForm(list[i], objList))
+            end
+          else
+            local objsToSend = {}
+            if not isEmptyTable(savedInitList) then
+              for i = 1, #objList do for j = 1, #savedInitList do
+                if objList[i][1] == savedInitList[j][1] then break end
+                if j == #savedInitList and objList[i][1] ~= savedInitList[j][1] then
+                  table.insert(objsToSend, objList[i])
+                end
+              end end
+
+            elseif not isEmptyTable(objList) then
+              objsToSend = objList
+            end
+            if #objsToSend > 0 then
+              table.insert(colorOverlayOpen, list[i].color)
+              table.insert(ui, createPlayerForm(list[i], objsToSend))
+            end
+          end
+        end
+      end
+    end
+  elseif not colorOverlayIsOpen(player.color) then -- if player overlay not on, create one
+    local objList = getPlayerSavedObjList(player.color)
+    if not isEmptyTable(objList) then
+      table.insert(colorOverlayOpen, player.color)
+      table.insert(ui, createPlayerForm(player, objList))
+    end
+  end
+  selectedPlayer = "All"
+  Wait.frames(function() UI.setXmlTable(ui) end, 1)
+end
+
+function getPlayerSavedObjList(color)
+  if not isEmptyTable(savedObjs) and not isEmptyTable(savedObjs[color]) then
+    local objList = savedObjs[color]
+    local keyTbl, returnedList = nil, {}
+    local i
+    for _, keyTbl in pairs(objList) do
+      for i = 1, #keyTbl do table.insert(returnedList, {keyTbl[i][1], keyTbl[i][2]}) end
+    end
+    return returnedList
+  end
+  return {}
+end
+
+function createPlayerForm(player, objList, getAllInits)
+  local name, color, i = player.steam_name, tostring(player.color)
+  local form = deepcopy(playerInitTableXML)
+  local submitButton = form["children"][1]["children"][2]["children"][1]["children"][1]
+  local cancelButton = form["children"][1]["children"][2]["children"][2]["children"][1]
+  local initTable = getInitPanelElement(UI.getXmlTable())
+  local sendFuncName = self.getGUID().."/sendPlayerObjInits("..color..")"
+  local cancelFuncName = self.getGUID().."/cancelSendInits("..color..")"
+  submitButton["attributes"].onClick = sendFuncName
+  cancelButton["attributes"].onClick = cancelFuncName
+
+  form["attributes"].visibility = color
+  form["attributes"].id = color .. "initPanel"
+  if objList and #objList > 0 then
+    local formScrollView = form["children"][1]["children"][1]["children"][1]["children"][1]
+    local formPanel = formScrollView["children"][1]
+
+    local maxObjHeight, listHeight = 10
+
+    if #objList > maxObjHeight then
+      listHeight = rowEntryHeight * maxObjHeight
+    else
+      listHeight = rowEntryHeight * #objList
+    end
+    formPanel["attributes"].height = tostring(listHeight)
+    form["attributes"].height = tostring(listHeight+80)
+    for i = 1, #objList do
+      local row = deepcopy(playerObjRowXML)
+      row["children"][1]["children"][1].value = objList[i][2]
+      row["children"][2]["children"][1]["attributes"].id = objList[i][1].."initInput"
+      row["children"][2]["children"][1]["attributes"].onValueChanged = "setInput"
+      table.insert(formPanel["children"], row)
+    end
+    return form
+  end
+  return nil
+end
+
+function tableHasID(id, elem)
+  if not isEmptyTable(elem["attributes"]) and elem["attributes"].id == id then return true end
+  return false
+end
+
+function sendPlayerObjInits(player)
+  local ui = UI.getXmlTable()
+  local isColorInitForm = function(elem) return tableHasID(player.color.."initPanel", elem) end
+  local playerTbl, i = BFS(ui, isColorInitForm)
+  local rows, objs, objsToSave =
+    playerTbl["children"][1]["children"][1]["children"][1]["children"][1]["children"][1]["children"], {}, {}
+  for i = 1, #rows do
+    local guid = string.sub(rows[i]["children"][2]["children"][1]["attributes"].id, 1, 6)
+    local name = rows[i]["children"][1]["children"][1].value
+    local val = tonumber(rows[i]["children"][2]["children"][1]["attributes"].text)
+    if name ~= "" and val then table.insert(objs, {guid, name, val, player.color}) end
+  end
+  if savedInitList and #savedInitList > 0 then
+    for i = 1, #objs do if getObjectFromGUID(objs[i][1]) then for j = 1, #savedInitList do
+      if savedInitList[j][1] == objs[i][1] then savedInitList[j][3] = objs[i][3] break end
+      if j == #savedInitList then table.insert(objsToSave, objs[i]) end
+    end end end
+    for i = 1, #objsToSave do
+      table.insert(savedInitList, objsToSave[i])
+    end
+  else
+    savedInitList = {}
+    for i = 1, #objs do if getObjectFromGUID(objs[i][1]) then table.insert(savedInitList, objs[i]) end end
+  end
+
+  closePlayerInitMenu(ui, playerTbl, player)
+end
+
+function closePlayerInitMenu(ui, playerTbl, player)
+  for i=1, #colorOverlayOpen do
+    if colorOverlayOpen[i] == player.color then table.remove(colorOverlayOpen, i) break end
+  end
+  for i=1, #ui do
+    if ui[i] == playerTbl then
+      table.remove(ui, i)
+      break
+  end end
+  UI.setXmlTable(ui)
+  Wait.frames(writeInitTable, 2)
+end
+
+function cancelSendInits(player)
+  local ui = UI.getXmlTable()
+  local isColorInitForm = function(elem) return tableHasID(player.color.."initPanel", elem) end
+  local playerTbl = BFS(ui, isColorInitForm)
+  closePlayerInitMenu(ui, playerTbl, player)
+end
+
+function clearInitList()
+  if selectedRow > 0 then setInitArrow(getObjectFromGUID(savedInitList[selectedRow][1]), savedInitList[selectedRow][4], false) end
+  selectedRow = -1
+  savedInitList = {}
+  colorOverlayOpen = {}
+  local ui = UI.getXmlTable()
+  local players = Player.getColors()
+  for i=1, #players do
+    local isColorInitForm = function(elem) return tableHasID(players[i].."initPanel", elem) end
+    local tbl = BFS(ui, isColorInitForm)
+    for j = 1, #ui do
+      if ui[j] == tbl then table.remove(ui, j) end
+    end
+  end
+  UI.setXmlTable(ui)
+  writeInitTable()
+end
+
+function deleteSelectedRow(player, value, id)
+  if selectedRow > 0 then
+    setInitArrow(getObjectFromGUID(savedInitList[selectedRow][1]), savedInitList[selectedRow][4], false)
+    table.remove(savedInitList, selectedRow)
+    if #savedInitList < 1 then
+      selectedRow = -1
+    elseif #savedInitList < selectedRow then
+      selectedRow = 1
+      setInitArrow(getObjectFromGUID(savedInitList[selectedRow][1]), savedInitList[selectedRow][4], true)
+    else
+      setInitArrow(getObjectFromGUID(savedInitList[selectedRow][1]), savedInitList[selectedRow][4], true)
+    end
+    writeInitTable()
+  end
+  closeDeleteConfirmMenu()
+end
+
+function selectInitRow(player, value, id)
+  if selectedRow > 0 then
+    setInitArrow(getObjectFromGUID(savedInitList[selectedRow][1]), savedInitList[selectedRow][4], false)
+  end
+  selectedRow = tonumber(id:sub(8, string.len(id)))
+  setInitArrow(getObjectFromGUID(savedInitList[selectedRow][1]), savedInitList[selectedRow][4], true)
+  writeInitTable()
+end
+
+function moveInitValueDown(player, value, id)
+  local movedListGUID, listPos, newPos = id:sub(1,6), tonumber(id:sub(9, string.len(id)))
+  if listPos and savedInitList then
+    if listPos >= #savedInitList then
+      newPos = 1
+      local btm, top = table.remove(savedInitList, #savedInitList), table.remove(savedInitList, newPos)
+      table.insert(savedInitList, 1, btm) table.insert(savedInitList, top)
+      if selectedRow == newPos then selectedRow = #savedInitList
+      elseif selectedRow == listPos then selectedRow = newPos end
+    else
+      newPos = listPos+1
+      if selectedRow == newPos then selectedRow = selectedRow-1
+      elseif selectedRow == listPos then selectedRow = newPos end
+      table.insert(savedInitList, newPos, table.remove(savedInitList, listPos))
+    end
+  end
+  writeInitTable()
+end
+
+function moveInitValueUp(player, value, id)
+  local movedListGUID, listPos, newPos = id:sub(1,6), tonumber(id:sub(9, 9))
+  if listPos and savedInitList then
+    if listPos <= 1 then
+      newPos = #savedInitList
+      local btm, top = table.remove(savedInitList, newPos), table.remove(savedInitList, 1)
+      table.insert(savedInitList, 1, btm) table.insert(savedInitList, top)
+
+      if selectedRow == newPos then selectedRow = 1
+      elseif selectedRow == listPos then selectedRow = newPos end
+    else
+      newPos = listPos-1
+      if selectedRow == newPos then selectedRow = selectedRow+1
+      elseif selectedRow == listPos then selectedRow = newPos end
+      table.insert(savedInitList, newPos, table.remove(savedInitList, listPos))
+    end
+  end
+  writeInitTable()
+end
+
+function writeInitTable()
+  local initTable = deepcopy(initPanelXML)
+  local visibilityStr
+  if hostHasInitiativeControl then visibilityStr = "Host|Black"
+  else visibilityStr = "Black" end
+  if overlayOn then initTable["attributes"].visibility = visibilityStr
+  else initTable["attributes"].visibility = "hidden" end
+  local initListChildren = initTable["children"][1]["children"][1]["children"][1]["children"][1]["children"][1]
+  initListChildren["children"] = {}
+  if savedInitList then
+    for i = 1, #savedInitList do
+      local newRow = deepcopy(emptyRow)
+      if selectedRow == i then
+        newRow["attributes"].dontUseTableRowBackground = "true" newRow["attributes"].color = "#20fc03"
+      end
+      newRow["attributes"].id = "initRow"..i
+      newRow["children"][1]["children"][1].value = savedInitList[i][2]
+      newRow["children"][2]["children"][1].value = savedInitList[i][3]
+      newRow["children"][3]["children"][1]["children"][1]["children"][1]["children"][1]["attributes"].id = "initRowU"..i
+      newRow["children"][3]["children"][1]["children"][2]["children"][1]["children"][1]["attributes"].id = "initRowD"..i
+      table.insert(initListChildren["children"], newRow)
+    end
+    local maxRowAmt, controlPanelHeight = 10, 320
+    if #savedInitList > maxRowAmt then
+      listHeight = maxRowAmt * rowEntryHeight
+    else
+      listHeight = #savedInitList * rowEntryHeight
+    end
+    initTable["attributes"].height = tostring(listHeight + controlPanelHeight)
+    initListChildren["attributes"].height = tostring(#savedInitList * rowEntryHeight)
+  end
+  setPlayerListDropdown(initTable, true)
+end
+
+function setPlayerListDropdown(newUI, addNew) -- gets all seated, non-spectator players to add to dropdown selection
+  local ui = UI.getXmlTable()
+  local oldPanel = getInitPanelElement(ui)
+  for i = 1, #ui do
+    if ui[i] == oldPanel then ui[i] = nil end
+  end
+  if savedInitList and #savedInitList > 0 then
+    newUI["children"][1]["children"][1]["attributes"].visibility = ""
+  else
+    newUI["children"][1]["children"][1]["attributes"].visibility = "hidden"
+  end
+  playerList = Player.getPlayers()
+  local seatedPlayers = {}
+  for _, player in ipairs(playerList) do if player.seated and player.color ~= "Grey" then table.insert(seatedPlayers, player) end end
+  local newList = deepcopy(initControlsXML)
+  local dropdownOptions = newList[#newList]["children"][1]["children"][1]["children"]
+  for _, player in ipairs(seatedPlayers) do
+    table.insert(dropdownOptions,{tag="Option",attributes={},value="-"..player.steam_name})
+  end
+  if addNew then
+    newUI["children"][1]["children"][2]["children"][1]["children"][1]["children"] = newList
+  else
+    local children = getInitPanelElement(newUI)["children"][1]["children"][2]["children"][1]["children"][1]["children"]
+    children[#children]["children"][1]["children"][1]["children"] = dropdownOptions
+  end
+  table.insert(ui, newUI)
+  UI.setXmlTable(ui)
+end
+
+function stopCombat()
+  if selectedRow > 0 and savedInitList then
+    setInitArrow(getObjectFromGUID(savedInitList[selectedRow][1]), "", false)
+    selectedRow = -1
+    writeInitTable()
+  end
+end
+
+function getSelectedPlayer()
+  local playerName = selectedPlayer:sub(2, selectedPlayer:len())
+  local playerList = Player.getPlayers()
+  for i = 1, #playerList do
+    if playerName == playerList[i].steam_name then
+      return playerList[i]
+    end
+  end
+  return nil
+end
+
+function isColorInitForm(elem, color)
+  if not isEmptyTable(elem["attributes"]) and elem["attributes"].id == color.."initPanel" then return true end
+  return false
+end
+
+function isEmptyTable(tbl)
+  if tbl == nil or tbl == {} or next(tbl) == nil then return true else return false end
+end
+
+function deepcopy(orig, copies) -- Save copied tables in `copies`, indexed by original table.
+  copies = copies or {}
+  local orig_type = type(orig)
+  local copy
+  if orig_type == 'table' then
+    if copies[orig] then
+      copy = copies[orig]
+    else
+      copy = {}
+      copies[orig] = copy
+      for orig_key, orig_value in next, orig, nil do
+        copy[deepcopy(orig_key, copies)] = deepcopy(orig_value, copies)
+      end
+      setmetatable(copy, deepcopy(getmetatable(orig), copies))
+    end
+  else -- number, string, boolean, etc
+    copy = orig
+  end
+  return copy
+end
+
+function turnOffColorObjects(color)
+  if not isEmptyTable(savedObjs) then
+    local selTable = savedObjs[color]
+    if selTable and next(selTable) then
+      if color == "Black" then color = {r=0, b=0, g=0} end
+
+      for k, tbl in pairs(selTable) do for i = 1, #tbl do
+        obj = getObjectFromGUID(tbl[i][1])
+        if obj ~= nil then tbl[i][3] = false obj.highlightOff(color) end
+      end end
+    end
+  end
+end
+
+function turnOnColorObjects(color)
+  if not isEmptyTable(savedObjs) then
+    local selTable = savedObjs[color]
+    if selTable and next(selTable) then
+      if color == "Black" then color = {r=0, b=0, g=0} end
+
+      for k, tbl in pairs(selTable) do for i = 1, #tbl do
+        obj = getObjectFromGUID(tbl[i][1])
+        if obj ~= nil then tbl[i][3] = true obj.highlightOn(color) end
+      end end
+    end
+  end
+end
+
+function setObjectsClick(player)
+  local bounds = self.getBounds() local center = bounds.center
+  local cast_params = {
+    origin = {center.x, center.y+0.5, center.z}, direction = {0, 1, 0},
+    type = 3, size = bounds.size,
+    max_distance = 1, debug = true
+  }
+  local setKey = self.UI.getAttribute("keyInput", "text")
+  local nameInput = self.UI.getAttribute("nameInput", "text")
+  if nameInput ~= "" and nameInput ~= nil then
+    local hitList = Physics.cast(cast_params)
+    local objGUID, objGUIDs, selfGUID, tblKey = nil, {}, self.getGUID()
+    for i = 1, #hitList do
+      objGUID = hitList[i].hit_object.getGUID()
+      if objGUID and objGUID ~= selfGUID then table.insert(objGUIDs, objGUID) end
+    end
+
+    if setKey ~= nil and isValidScriptKey(setKey) then
+      tblKey = setKey
+    else
+      tblKey = 'none'
+    end
+
+    if #objGUIDs > 0 then
+      local color, nameList = player.color, getNameList(nameInput, #objGUIDs)
+
+      if savedObjs == nil or next(savedObjs) == nil then -- create new table to start savedObjs
+        savedObjs = {}
+        local newColorTbl = { [tblKey] = {} }
+        for i = 1, #objGUIDs do table.insert(newColorTbl[tblKey], {objGUIDs[i], nameList[i], false}) end
+        savedObjs[color] = newColorTbl
+      elseif savedObjs[color] == nil or next(savedObjs[color]) == nil then -- check all color tables for object to remove before adding table
+        savedObjs[color] = { [tblKey] = {} } saveObjs(objGUIDs, nameList, color, tblKey)
+      elseif savedObjs[color][tblKey] == nil or next(savedObjs[color][tblKey]) == nil then
+        savedObjs[color][tblKey] = {} saveObjs(objGUIDs, nameList, color, tblKey)
+      else saveObjs(objGUIDs, nameList, color, tblKey) end
+    end
+  end
+end
+
+function getNameList(name, amt)
+  local nameList = {name}
+  for i = 2, amt do
+    nameList[i] = name.."("..tostring(i-1)..")"
+  end
+  return nameList
+end
+
+function saveObjs(guids, names, color, setKey)
+  for i = 1, #guids do
+    placeObj(guids[i], names[i], getObjTablePos(guids[i]), color, setKey)
+  end
+end
+
+function getObjTablePos(guid)
+  local posTbl, i = nil, 1
+  for colorKey, colorTbl in pairs(savedObjs) do
+    posTbl = objPosInColorTable(colorKey, guid)
+    if posTbl.color ~= nil and posTbl.keyName ~= nil and posTbl.keyIndex ~= nil then return posTbl end
+  end
+  return posTbl
+end
+
+function objPosInColorTable(colorKey, guid)
+  local posTbl, colorTbl = {color=nil, keyName=nil, keyIndex=nil}, savedObjs[colorKey]
+  if colorTbl == nil then return posTbl end
+  for key, tbl in pairs(colorTbl) do for i = 1, #tbl do
+    if tbl[i][1] == guid then
+      posTbl = {color=colorKey, keyName=key, keyIndex=i}
+      return posTbl
+    end
+  end end
+  return posTbl
+end
+
+function clearEmptyTables(colorTbl, keyName, color)
+  if next(colorTbl[keyName]) == nil then colorTbl[keyName] = nil end
+  if next(savedObjs[color]) == nil then savedObjs[color] = nil end
+end
+
+function placeObj(guid, name, posTbl, color, setKey)
+  if posTbl.color ~= nil and posTbl.keyName ~= nil and posTbl.keyIndex ~= nil then
+    local colorTbl = savedObjs[posTbl.color]
+    table.remove(colorTbl[posTbl.keyName], posTbl.keyIndex)
+    table.insert(savedObjs[color][setKey], {guid, name, false})
+    clearEmptyTables(colorTbl, tostring(posTbl.keyName), posTbl.color)
+  else
+    table.insert(savedObjs[color][setKey], {guid, name, false})
+  end
+end
+
+function isValidScriptKey(currNum)
+  if currNum == "10" or currNum == "1" or currNum == "2" or currNum == "3" or currNum == "4" or currNum == "5" or currNum == "6" or currNum == "7" or currNum == "8" or currNum == "9" then
+    return true
+  else return false
+  end
+end
+
+function printSavedObjs()
+  local keyStr, guidStr
+  if savedObjs == nil or savedObjs == {} then print("Saved Object list empty.") return end
+  for colorKey, keyTbls in pairs(savedObjs) do
+    print(colorKey .. ": ")
+    for key, keyTbl in pairs(keyTbls) do
+      keyStr = "Key: " .. key .. " | GUIDs: "
+      guidStr = tostring(keyTbl[1][1]).." - "..tostring(keyTbl[1][2])
+      for i = 2, #keyTbl do guidStr = guidStr .. ", " .. tostring(keyTbl[i][1]).." - "..tostring(keyTbl[i][2]) end
+      print(keyStr .. guidStr)
+    end
+  end
+end
+
+function clearSavedObjs()
+  print("Clearing ALL saved Objects")
+  resetAllHighlights()
+  toggleSettingsMenu()
+  if savedInitList and #savedInitList > 0 and selectedRow > 0 then
+    setInitArrow(getObjectFromGUID(savedInitList[selectedRow][1]), "", false)
+  end
+  savedObjs = {} savedInitList = {}
+  selectedRow = -1
+  writeInitTable()
+end
+
+function sortInitList()
+  if selectedRow > 0 then setInitArrow(getObjectFromGUID(savedInitList[selectedRow][1]), "", false) end
+  table.sort(savedInitList, function(a, b) return tonumber(a[3]) > tonumber(b[3]) end)
+  selectedRow = -1
+  writeInitTable()
+end
+
+function clearPlayerSavedObjs(player)
+  print("Clearing "..player.color.." player's saved objects")
+  turnOffColorObjects(player.color)
+  if savedInitList and #savedInitList > 0 and selectedRow > 0 then
+    setInitArrow(getObjectFromGUID(savedInitList[selectedRow][1]), "", false)
+  end
+  savedObjs[player.color] = {}
+  local newList = {}
+  for i = 1, #savedInitList do
+    if savedInitList[i][4] ~= player.color then
+      table.insert(newList, savedInitList[i])
+    end
+  end
+  savedInitList = newList
+  selectedRow = -1
+  toggleSettingsMenu()
+  writeInitTable()
+end
+
+function getKeyTable(key, color)
+  if savedObjs ~= nil and next(savedObjs) ~= nil then for colorName, tbl in pairs(savedObjs) do
+    if colorName == color then for keyName, keyTbl in pairs(tbl) do if keyName == tostring(key) then return keyTbl end end end
+  end end
+  return nil
+end
+
+function selectNextInit()
+  if selectedRow > 0 then
+    if not isEmptyTable(savedObjs) and not isEmptyTable(savedInitList) and selectedRow > 0 then
+      local selObj = getObjectFromGUID(savedInitList[selectedRow][1])
+      if selObj then
+        local posTbl = getObjTablePos(selObj.guid)
+        if not isEmptyTable(posTbl) and posTbl.color ~= nil and posTbl.keyName ~= nil and posTbl.keyIndex ~= nil then
+          if not savedObjs[posTbl.color][posTbl.keyName][posTbl.keyIndex][3] then
+            setCurrentInitHighlight(false)
+          end
+        end
+      end
+    end
+    if selectedRow < #savedInitList then
+      setInitArrow(getObjectFromGUID(savedInitList[selectedRow][1]), savedInitList[selectedRow][4], false)
+      selectedRow = selectedRow + 1
+      setInitArrow(getObjectFromGUID(savedInitList[selectedRow][1]), savedInitList[selectedRow][4], true)
+      if Player[savedInitList[selectedRow][4]].seated then
+        broadcastToColor(savedInitList[selectedRow][4].." Player: "..savedInitList[selectedRow][2].."'s turn!", savedInitList[selectedRow][4])
+      end
+    elseif selectedRow >= #savedInitList then
+      setInitArrow(getObjectFromGUID(savedInitList[selectedRow][1]), savedInitList[selectedRow][4], false)
+      selectedRow = 1
+      setInitArrow(getObjectFromGUID(savedInitList[selectedRow][1]), savedInitList[selectedRow][4], true)
+      if Player[savedInitList[selectedRow][4]].seated then
+        broadcastToColor(savedInitList[selectedRow][4].." Player: "..savedInitList[selectedRow][2].."'s turn!", savedInitList[selectedRow][4])
+      end
+    end
+    writeInitTable()
+  end
+end
+
+function setInitArrow(obj, color, turnOn)
+  local objUI = obj.UI.getXmlTable()
+  local guid = obj.getGUID()
+  local arrowVisibility
+
+  if hostHasInitiativeControl then arrowVisibility = "Black|Host|"..color
+  else arrowVisibility = "Black|"..color
+  end
+  local imageScale = arrowScale .. " " .. arrowScale .. " " .. arrowScale
+
+  local imagesRemoved = 0
+  if objUI and objUI ~= "" then
+    if turnOn then
+      local bounds = obj.getBoundsNormalized()
+      local scale = obj.getScale()
+      local rotations = {"90 0 90","0 270 0"}
+      local arrowPos = bounds["size"].y*-1*125/scale.y
+
+      for i = 1, 2 do
+        local arrow = deepcopy(initArrowXML)
+        arrow["attributes"].id = guid.."arrowImg"..i
+        arrow["attributes"].image = "Arrow Image"
+        arrow["attributes"].position = "0 0 "..arrowPos
+        arrow["attributes"].rotation = rotations[i]
+        arrow["attributes"].visibility = arrowVisibility
+        arrow["attributes"].scale = imageScale
+        table.insert(objUI, arrow)
+      end
+      obj.UI.setXmlTable(objUI)
+    else
+      for key, img in ipairs(objUI) do if img["attributes"].id == guid.."arrowImg1" or img["attributes"].id == guid.."arrowImg2" then
+        objUI[key] = nil
+        imagesRemoved = imagesRemoved + 1
+        if imagesRemoved == 2 then break end
+      end end
+      obj.UI.setXmlTable({objUI})
+    end
+  elseif turnOn then
+    local bounds = obj.getBounds()
+    local scale = obj.getScale()
+    local rotations = {"90 0 90","0 270 0"}
+    local arrowPos = bounds["size"].y*-125/scale.y
+    for i = 1, 2 do
+      local arrow = deepcopy(initArrowXML)
+      arrow["attributes"].id = guid.."arrowImg"..i
+      arrow["attributes"].image = "Arrow Image"
+      arrow["attributes"].position = "0 0 "..arrowPos
+      arrow["attributes"].rotation = rotations[i]
+      arrow["attributes"].visibility = arrowVisibility
+      arrow["attributes"].scale = imageScale
+      table.insert(objUI, arrow)
+    end
+    obj.UI.setXmlTable(objUI)
+  end
+end
+
+
+--#endregion
