@@ -11,7 +11,7 @@
  
 # Planned features:
  Add more menu visibility options.
- Additional mods to include another project of mine. Stay tuned :)
+ Additional mods to include another project of mine, Project World Map: https://youtu.be/0EEcCIoga0E
  
 # Assistance appreicated:
  Having trouble with some of the bugs. Advice or PRs will be considered.
