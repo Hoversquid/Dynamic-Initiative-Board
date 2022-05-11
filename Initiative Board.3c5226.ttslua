@@ -1200,6 +1200,12 @@ function setInitArrow(obj, color, turnOn)
   local objUI = obj.UI.getXmlTable()
   local guid = obj.getGUID()
   local arrowVisibility
+  
+  local callback = "dynamicInitiativeBoard_onSetInitArrow"
+  if obj.getVar(callback) ~= nil then
+    local preventDefault = obj.call(callback, turnOn)
+    if preventDefault == true then return end
+  end
 
   if hostHasInitiativeControl then arrowVisibility = "Black|Host|"..color
   else arrowVisibility = "Black|"..color
